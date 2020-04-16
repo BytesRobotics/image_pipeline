@@ -62,6 +62,7 @@ protected:
 
   // Configuration
   std::string camera_namespace_;
+  std::string camera_topic_;
   int interpolation_;
   bool use_scale_;
   double scale_height_;
