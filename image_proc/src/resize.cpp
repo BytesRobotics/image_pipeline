@@ -54,16 +54,19 @@ ResizeNode::ResizeNode(const rclcpp::NodeOptions & options)
     {
       auto result = rcl_interfaces::msg::SetParametersResult();
       result.successful = true;
+      image_topic_ = "/camera";
 
       for (auto parameter : parameters) {
         if (parameter.get_name() == "camera_namespace") {
           camera_namespace_ = parameter.as_string();
           RCLCPP_INFO(get_logger(), "camera_namespace: %s ", camera_namespace_.c_str());
-          break;
+        } else if (parameter.get_name() == "camera_topic") {
+            camera_topic_ = parameter.as_string();
+            RCLCPP_INFO(get_logger(), "camera_topic: %s ", camera_topic_.c_str());
         }
       }
 
-      image_topic_ = camera_namespace_ + "/image";
+      image_topic_ = camera_namespace_ + image_topic_;
       camera_info_topic_ = camera_namespace_ + "/camera_info";
       connectCb();
 
