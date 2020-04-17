@@ -54,19 +54,16 @@ ResizeNode::ResizeNode(const rclcpp::NodeOptions & options)
     {
       auto result = rcl_interfaces::msg::SetParametersResult();
       result.successful = true;
-      image_topic_ = "/camera";
 
       for (auto parameter : parameters) {
         if (parameter.get_name() == "camera_namespace") {
           camera_namespace_ = parameter.as_string();
           RCLCPP_INFO(get_logger(), "camera_namespace: %s ", camera_namespace_.c_str());
-        } else if (parameter.get_name() == "camera_topic") {
-            camera_topic_ = parameter.as_string();
-            RCLCPP_INFO(get_logger(), "camera_topic: %s ", camera_topic_.c_str());
+          break;
         }
       }
 
-      image_topic_ = camera_namespace_ + image_topic_;
+      image_topic_ = camera_namespace_ + "/camera";
       camera_info_topic_ = camera_namespace_ + "/camera_info";
       connectCb();
 
@@ -110,9 +107,6 @@ void ResizeNode::imageCb(
   sensor_msgs::msg::Image::ConstSharedPtr image_msg,
   sensor_msgs::msg::CameraInfo::ConstSharedPtr info_msg)
 {
-  if (pub_image_.getNumSubscribers() < 1) {
-    return;
-  }
 
   cv_bridge::CvImagePtr cv_ptr;
 
