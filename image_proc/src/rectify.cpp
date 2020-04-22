@@ -68,11 +68,15 @@ namespace image_proc {
                         if (parameter.get_name() == "image_color") {
                             image_topic = camera_namespace_ + parameter.as_string();
                             image_rect = camera_namespace_ + "/image_rect_color";
-                            RCLCPP_INFO(get_logger(), "image_topic: %s, Publish to topic image_rect: %s", image_topic.c_str(), image_rect.c_str());
+                            RCLCPP_INFO(get_logger(), "image_topic: %s, Publish to topic image_rect: %s",
+                                        image_topic.c_str(), image_rect.c_str());
                             connectCb();
                             std::lock_guard<std::mutex> lock(connect_mutex_);
                             pub_rect_ = image_transport::create_publisher(this, image_rect);
                             break;
+                        }
+                        if (parameter.get_name() == "interpolation") {
+                            interpolation = parameter.as_int();
                         }
                     }
                     return result;
@@ -82,6 +86,7 @@ namespace image_proc {
         this->declare_parameter("camera_namespace", rclcpp::ParameterValue());
         this->declare_parameter("image_mono", rclcpp::ParameterValue());
         this->declare_parameter("image_color", rclcpp::ParameterValue());
+        this->declare_parameter("interpolation", 1);
 
         rclcpp::Parameter parameter;
         if (rclcpp::PARAMETER_NOT_SET != this->get_parameter("image_mono", parameter)) {
@@ -93,8 +98,11 @@ namespace image_proc {
             parameter_change_cb(this->get_parameters({"camera_namespace", "image_color"}));
         }
 
+        if (rclcpp::PARAMETER_NOT_SET != this->get_parameter("interpolation", parameter)) {
+            parameter_change_cb(this->get_parameters({"interpolation"}));
+        }
+
         queue_size_ = this->declare_parameter("queue_size", 5);
-        interpolation = this->declare_parameter("interpolation", 0);
         this->set_on_parameters_set_callback(parameter_change_cb);
     }
 
