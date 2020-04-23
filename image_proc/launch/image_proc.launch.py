@@ -29,19 +29,16 @@
 # ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 
-""" A simple launch file for the nmea_serial_driver node. """
-
-import os
 import sys
 
-import launch
 from launch import LaunchDescription, LaunchIntrospector, LaunchService
 from launch_ros import actions, get_default_launch_description
 
-from launch_ros.actions import ComposableNodeContainer
 from launch_ros.descriptions import ComposableNode
 
+# Set namespace for all nodes to /camera (for readability purposes)
 NAMESPACE = "/camera"
+
 
 def generate_launch_description():
     """
@@ -49,6 +46,7 @@ def generate_launch_description():
     """
     ld = LaunchDescription()
 
+    # Load composable container
     image_processing = actions.ComposableNodeContainer(
         node_name="image_proc_container",
         node_namespace=NAMESPACE,
@@ -60,29 +58,21 @@ def generate_launch_description():
                 node_plugin='image_proc::DebayerNode',
                 node_name='debayer_node',
                 node_namespace=NAMESPACE,
-                parameters=[
-                    {"camera_namespace": NAMESPACE}
-                ]
             ),
+            # Example of rectifying an image
             ComposableNode(
                 package='image_proc',
                 node_plugin='image_proc::RectifyNode',
                 node_name='rectify_mono_node',
                 node_namespace=NAMESPACE,
-                parameters=[
-                    {"camera_namespace": NAMESPACE},
-                    {"image_mono": "/image_mono"}
-                ]
-            ),
-            ComposableNode(
-                package='image_proc',
-                node_plugin='image_proc::RectifyNode',
-                node_name='rectify_color_node',
-                node_namespace=NAMESPACE,
-                parameters=[
-                    {"camera_namespace": NAMESPACE},
-                    {"image_color": "/image_color"}
-                ]
+                # Remap subscribers and publishers
+                remappings=[
+                    # Subscriber remap
+                    ('/image', NAMESPACE + '/image'),
+                    ('/camera_info', NAMESPACE + '/camera_info'),
+                    # Publisher remap
+                    ('/image_rect', NAMESPACE + '/image_rect')
+                ],
             )],
         output='screen'
     )

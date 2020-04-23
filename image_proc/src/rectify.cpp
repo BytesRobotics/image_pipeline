@@ -40,89 +40,61 @@
 #include "image_proc/rectify.hpp"
 namespace image_proc {
 
-    RectifyNode::RectifyNode(const rclcpp::NodeOptions& options)
-            : Node("RectifyNode", options)
-    {
-        auto parameter_change_cb =
-                [this](std::vector<rclcpp::Parameter> parameters) -> rcl_interfaces::msg::SetParametersResult
-                {
-                    auto result = rcl_interfaces::msg::SetParametersResult();
-                    result.successful = true;
-                    for (auto parameter : parameters) {
-                        if (parameter.get_name() == "camera_namespace") {
-                            camera_namespace_ = parameter.as_string();
-                            RCLCPP_INFO(get_logger(), "camera_namespace: %s ", camera_namespace_.c_str());
-                            break;
-                        }
-                    }
-                    for (auto parameter : parameters){
-                        if (parameter.get_name() == "image_mono") {
-                            image_topic = camera_namespace_ + parameter.as_string();
-                            image_rect = camera_namespace_+"/image_rect";
-                            RCLCPP_INFO(get_logger(), "image_topic: %s, Publish to topic image_rect: %s", image_topic.c_str(), image_rect.c_str());
-                            connectCb();
-                            std::lock_guard<std::mutex> lock(connect_mutex_);
-                            pub_rect_ = image_transport::create_publisher(this, image_rect);
-                            break;
-                        }
-                        if (parameter.get_name() == "image_color") {
-                            image_topic = camera_namespace_ + parameter.as_string();
-                            image_rect = camera_namespace_ + "/image_rect_color";
-                            RCLCPP_INFO(get_logger(), "image_topic: %s, Publish to topic image_rect: %s",
-                                        image_topic.c_str(), image_rect.c_str());
-                            connectCb();
-                            std::lock_guard<std::mutex> lock(connect_mutex_);
-                            pub_rect_ = image_transport::create_publisher(this, image_rect);
-                            break;
-                        }
-                        if (parameter.get_name() == "interpolation") {
-                            interpolation = parameter.as_int();
-                        }
-                    }
-                    return result;
-                };
+namespace image_proc
+{
 
-        // Declare parameters
-        this->declare_parameter("camera_namespace", rclcpp::ParameterValue());
-        this->declare_parameter("image_mono", rclcpp::ParameterValue());
-        this->declare_parameter("image_color", rclcpp::ParameterValue());
-        this->declare_parameter("interpolation", 1);
+RectifyNode::RectifyNode(const rclcpp::NodeOptions & options)
+: Node("RectifyNode", options)
+{
 
-        rclcpp::Parameter parameter;
-        if (rclcpp::PARAMETER_NOT_SET != this->get_parameter("image_mono", parameter)) {
-            parameter_change_cb(this->get_parameters({"camera_namespace", "image_mono"}));
-        }
-
-
-        if (rclcpp::PARAMETER_NOT_SET != this->get_parameter("image_color", parameter)) {
-            parameter_change_cb(this->get_parameters({"camera_namespace", "image_color"}));
-        }
-
-        if (rclcpp::PARAMETER_NOT_SET != this->get_parameter("interpolation", parameter)) {
-            parameter_change_cb(this->get_parameters({"interpolation"}));
-        }
-
-        queue_size_ = this->declare_parameter("queue_size", 5);
-        this->set_on_parameters_set_callback(parameter_change_cb);
-    }
+  queue_size_ = this->declare_parameter("queue_size", 5);
+  interpolation = this->declare_parameter("interpolation", 1);
+  pub_rect_ = image_transport::create_publisher(this, "/image_rect");
+  subscribeToCamera();
+}
 
 // Handles (un)subscribing when clients (un)subscribe
-    void RectifyNode::connectCb()
-    {
-        std::lock_guard<std::mutex> lock(connect_mutex_);
+void RectifyNode::subscribeToCamera()
+{
+  std::lock_guard<std::mutex> lock(connect_mutex_);
 
-        /*
-        *  SubscriberStatusCallback not yet implemented
-        */
-        /*if (pub_rect_.getNumSubscribers() == 0)
-          sub_camera_.shutdown();
-        else if (!sub_camera_)
-        {*/
-        RCLCPP_INFO(get_logger(), "Subscribe to topic: %s", image_topic.c_str());
-        sub_camera_ = image_transport::create_camera_subscription(this, image_topic,
-                                                                  std::bind(&RectifyNode::imageCb,
-                                                                            this, std::placeholders::_1, std::placeholders::_2),"raw");
-        //}
+  /*
+  *  SubscriberStatusCallback not yet implemented
+  *
+  if (pub_rect_.getNumSubscribers() == 0)
+    sub_camera_.shutdown();
+  else if (!sub_camera_)
+  {
+  */
+  sub_camera_ = image_transport::create_camera_subscription(
+    this, "/image", std::bind(&RectifyNode::imageCb,
+    this, std::placeholders::_1, std::placeholders::_2), "raw");
+  // }
+}
+
+void RectifyNode::imageCb(
+  const sensor_msgs::msg::Image::ConstSharedPtr & image_msg,
+  const sensor_msgs::msg::CameraInfo::ConstSharedPtr & info_msg)
+{
+  if (pub_rect_.getNumSubscribers() < 1) {
+    return;
+  }
+
+  // Verify camera is actually calibrated
+  if (info_msg->k[0] == 0.0) {
+    RCLCPP_ERROR(
+      this->get_logger(), "Rectified topic '%s' requested but camera publishing '%s' "
+      "is uncalibrated", pub_rect_.getTopic().c_str(), sub_camera_.getInfoTopic().c_str());
+    return;
+  }
+
+  // If zero distortion, just pass the message along
+  bool zero_distortion = true;
+
+  for (size_t i = 0; i < info_msg->d.size(); ++i) {
+    if (info_msg->d[i] != 0.0) {
+      zero_distortion = false;
+      break;
     }
 
     void RectifyNode::imageCb(const sensor_msgs::msg::Image::ConstSharedPtr & image_msg,
