@@ -38,109 +38,76 @@
 #include <image_geometry/pinhole_camera_model.h>
 #include <cv_bridge/cv_bridge.h>
 #include "image_proc/rectify.hpp"
+
 namespace image_proc {
 
-namespace image_proc
-{
+    RectifyNode::RectifyNode(const rclcpp::NodeOptions &options)
+            : Node("RectifyNode", options) {
 
-RectifyNode::RectifyNode(const rclcpp::NodeOptions & options)
-: Node("RectifyNode", options)
-{
-
-  queue_size_ = this->declare_parameter("queue_size", 5);
-  interpolation = this->declare_parameter("interpolation", 1);
-  pub_rect_ = image_transport::create_publisher(this, "/image_rect");
-  subscribeToCamera();
-}
+      queue_size_ = this->declare_parameter("queue_size", 5);
+      interpolation = this->declare_parameter("interpolation", 1);
+      pub_rect_ = image_transport::create_publisher(this, "/image_rect");
+      subscribeToCamera();
+    }
 
 // Handles (un)subscribing when clients (un)subscribe
-void RectifyNode::subscribeToCamera()
-{
-  std::lock_guard<std::mutex> lock(connect_mutex_);
+    void RectifyNode::subscribeToCamera() {
+      std::lock_guard<std::mutex> lock(connect_mutex_);
 
-  /*
-  *  SubscriberStatusCallback not yet implemented
-  *
-  if (pub_rect_.getNumSubscribers() == 0)
-    sub_camera_.shutdown();
-  else if (!sub_camera_)
-  {
-  */
-  sub_camera_ = image_transport::create_camera_subscription(
-    this, "/image", std::bind(&RectifyNode::imageCb,
-    this, std::placeholders::_1, std::placeholders::_2), "raw");
-  // }
-}
-
-void RectifyNode::imageCb(
-  const sensor_msgs::msg::Image::ConstSharedPtr & image_msg,
-  const sensor_msgs::msg::CameraInfo::ConstSharedPtr & info_msg)
-{
-  if (pub_rect_.getNumSubscribers() < 1) {
-    return;
-  }
-
-  // Verify camera is actually calibrated
-  if (info_msg->k[0] == 0.0) {
-    RCLCPP_ERROR(
-      this->get_logger(), "Rectified topic '%s' requested but camera publishing '%s' "
-      "is uncalibrated", pub_rect_.getTopic().c_str(), sub_camera_.getInfoTopic().c_str());
-    return;
-  }
-
-  // If zero distortion, just pass the message along
-  bool zero_distortion = true;
-
-  for (size_t i = 0; i < info_msg->d.size(); ++i) {
-    if (info_msg->d[i] != 0.0) {
-      zero_distortion = false;
-      break;
+      /*
+      *  SubscriberStatusCallback not yet implemented
+      *
+      if (pub_rect_.getNumSubscribers() == 0)
+        sub_camera_.shutdown();
+      else if (!sub_camera_)
+      {
+      */
+      sub_camera_ = image_transport::create_camera_subscription(
+              this, "/image", std::bind(&RectifyNode::imageCb,
+                                        this, std::placeholders::_1, std::placeholders::_2), "raw");
+      // }
     }
 
-    void RectifyNode::imageCb(const sensor_msgs::msg::Image::ConstSharedPtr & image_msg,
-                              const sensor_msgs::msg::CameraInfo::ConstSharedPtr & info_msg)
-    {
-        // Verify camera is actually calibrated
-        if (info_msg->k[0] == 0.0) {
-            RCLCPP_ERROR(this->get_logger(), "Rectified topic '%s' requested but camera publishing '%s' "
-                                             "is uncalibrated", pub_rect_.getTopic().c_str(),
-                         sub_camera_.getInfoTopic().c_str());
-            return;
+    void RectifyNode::imageCb(const sensor_msgs::msg::Image::ConstSharedPtr &image_msg,
+                              const sensor_msgs::msg::CameraInfo::ConstSharedPtr &info_msg) {
+      // Verify camera is actually calibrated
+      if (info_msg->k[0] == 0.0) {
+        RCLCPP_ERROR(this->get_logger(), "Rectified topic '%s' requested but camera publishing '%s' "
+                                         "is uncalibrated", pub_rect_.getTopic().c_str(),
+                     sub_camera_.getInfoTopic().c_str());
+        return;
+      }
+
+      // If zero distortion, just pass the message along
+      bool zero_distortion = true;
+      for (size_t i = 0; i < info_msg->d.size(); ++i) {
+        if (info_msg->d[i] != 0.0) {
+          zero_distortion = false;
+          break;
         }
+      }
+      // This will be true if D is empty/zero sized
+      if (zero_distortion) {
+        pub_rect_.publish(image_msg);
+        return;
+      }
 
-        // If zero distortion, just pass the message along
-        bool zero_distortion = true;
-        for (size_t i = 0; i < info_msg->d.size(); ++i)
-        {
-            if (info_msg->d[i] != 0.0)
-            {
-                zero_distortion = false;
-                break;
-            }
-        }
-        // This will be true if D is empty/zero sized
-        if (zero_distortion)
-        {
-            pub_rect_.publish(image_msg);
-            return;
-        }
+      // Update the camera model
+      model_.fromCameraInfo(info_msg);
 
-        // Update the camera model
-        model_.fromCameraInfo(info_msg);
+      // Create cv::Mat views onto both buffers
+      const cv::Mat image = cv_bridge::toCvShare(image_msg)->image;
+      cv::Mat rect;
 
-        // Create cv::Mat views onto both buffers
-        const cv::Mat image = cv_bridge::toCvShare(image_msg)->image;
-        cv::Mat rect;
+      // Rectify and publish
+      model_.rectifyImage(image, rect, interpolation);
 
-        // Rectify and publish
-        model_.rectifyImage(image, rect, interpolation);
-
-        // Allocate new rectified image message
-        sensor_msgs::msg::Image::SharedPtr rect_msg = cv_bridge::CvImage(image_msg->header, image_msg->encoding, rect).toImageMsg();
-        pub_rect_.publish(rect_msg);
+      // Allocate new rectified image message
+      sensor_msgs::msg::Image::SharedPtr rect_msg = cv_bridge::CvImage(image_msg->header, image_msg->encoding,
+                                                                       rect).toImageMsg();
+      pub_rect_.publish(rect_msg);
     }
 } // namespace image_proc
-
 #include "rclcpp_components/register_node_macro.hpp"
 
 // Register the component with class_loader.
