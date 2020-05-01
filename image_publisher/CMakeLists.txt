@@ -36,7 +36,7 @@ message(STATUS "opencv version ${OpenCV_VERSION}")
 if(OpenCV_VERSION VERSION_LESS "3.0.0")
   find_package(OpenCV 2 REQUIRED COMPONENTS ${opencv_2_components})
 else()
-  find_package(OpenCV 3 REQUIRED COMPONENTS ${opencv_3_components})
+  find_package(OpenCV 4 REQUIRED COMPONENTS ${opencv_3_components})
 endif()
 
 include_directories(include)
